@@ -326,7 +326,7 @@ def qiandao(
                                 notify_url = PUSHPLUS_URL.format(
                                     token=pushplus_token,
                                     title="班级魔方自动签到",
-                                    content=f"用户{uid+1}{username_tag} 班级{class_id} {result_text}"
+                                    content=f"用户{uid+1}{username_tag} 班级{class_id} gps签到{match_id} {result_text}"
                                 )
                                 requests.get(notify_url, timeout=10)
                             except Exception:
@@ -375,7 +375,7 @@ def run_all_classes(
 
         # ── 第一次重试（30后） ──
         if error_cookies:
-            console.print(f"\n  [yellow]⚠[/yellow] 有 [bold]{len(error_cookies)}[/bold] 个账号签到失败，5 分钟后重试…")
+            console.print(f"\n  [yellow]⚠[/yellow] 有 [bold]{len(error_cookies)}[/bold] 个账号签到失败，30秒后重试…")
             time.sleep(30)
             error_cookies, _ = qiandao(
                 class_id, error_cookies, locations, pushplus_token, debug, logger
@@ -383,7 +383,7 @@ def run_all_classes(
 
         # ── 第二次重试（再等 5 分钟） ──
         if error_cookies:
-            console.print(f"\n  [yellow]⚠[/yellow] 仍有 [bold]{len(error_cookies)}[/bold] 个账号失败，15 分钟后最后一次重试…")
+            console.print(f"\n  [yellow]⚠[/yellow] 仍有 [bold]{len(error_cookies)}[/bold] 个账号失败，5 分钟后最后一次重试…")
             time.sleep(300)
             error_cookies, _ = qiandao(
                 class_id, error_cookies, locations, pushplus_token, debug, logger
