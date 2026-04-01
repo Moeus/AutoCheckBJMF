@@ -43,7 +43,22 @@ PUSHPLUS_URL = "http://www.pushplus.plus/send?token={token}&title={title}&conten
 
 # Cookie 中需要提取的字段名
 COOKIE_KEY = "remember_student_59ba36addc2b2f9401580f014c7f58ea4e30989d"
+def print_banner():
+    """打印带 Rich 样式的欢迎横幅与 ASCII Art 标题。"""
+    # ASCII Art 标题（保持原有设计）
+    ascii_art = """
+                     _                _____   _                     _        ____         _   __  __   ______ 
+     /\             | |              / ____| | |                   | |      |  _ \       | | |  \/  | |  ____|
+    /  \     _   _  | |_    ___     | |      | |__     ___    ___  | | __   | |_) |      | | | \  / | | |__   
+   / /\ \   | | | | | __|  / _ \    | |      | '_ \   / _ \  / __| | |/ /   |  _ <   _   | | | |\/| | |  __|  
+  / ____ \  | |_| | | |_  | (_) |   | |____  | | | | |  __/ | (__  |   <    | |_) | | |__| | | |  | | | |     
+ /_/    \_\  \__,_|  \__|  \___/     \_____| |_| |_|  \___|  \___| |_|\_\   |____/   \____/  |_|  |_| |_|     
+                                                                                                              
+                                                                                                              
+ """
 
+    console.print(f"\n[bold cyan]{ascii_art}[/bold cyan]")
+    console.print()
 
 def load_config() -> dict:
     """
@@ -458,6 +473,7 @@ def main():
     3. 若有定时时间则注册 schedule 任务并循环倒计时
     4. 若无定时时间则立即执行一次签到后退出
     """
+    print_banner()
     console.print(Panel(
         "[bold white]AutoCheckBJMF — 班级魔方自动签到[/bold white]  [dim]定时模式[/dim]\n"
         "[dim]项目地址：https://github.com/Moeus/AutoCheckBJMF[/dim]",

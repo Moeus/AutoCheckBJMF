@@ -20,7 +20,22 @@ from rich.panel import Panel
 from rich.table import Table
 from rich import box
 
+def print_banner():
+    """打印带 Rich 样式的欢迎横幅与 ASCII Art 标题。"""
+    # ASCII Art 标题（保持原有设计）
+    ascii_art = """
+                     _                _____   _                     _        ____         _   __  __   ______ 
+     /\             | |              / ____| | |                   | |      |  _ \       | | |  \/  | |  ____|
+    /  \     _   _  | |_    ___     | |      | |__     ___    ___  | | __   | |_) |      | | | \  / | | |__   
+   / /\ \   | | | | | __|  / _ \    | |      | '_ \   / _ \  / __| | |/ /   |  _ <   _   | | | |\/| | |  __|  
+  / ____ \  | |_| | | |_  | (_) |   | |____  | | | | |  __/ | (__  |   <    | |_) | | |__| | | |  | | | |     
+ /_/    \_\  \__,_|  \__|  \___/     \_____| |_| |_|  \___|  \___| |_|\_\   |____/   \____/  |_|  |_| |_|     
+                                                                                                              
+                                                                                                              
+ """
 
+    console.print(f"\n[bold cyan]{ascii_art}[/bold cyan]")
+    console.print()
 def main():
     """
     once.py 程序入口：
@@ -29,6 +44,8 @@ def main():
     3. 立即对所有班级、所有账号执行一次完整签到
     4. 签到结束后等待用户按回车退出
     """
+
+    print_banner()
     console.print(Panel(
         "[bold white]AutoCheckBJMF — 班级魔方自动签到[/bold white]  [bold yellow]一次性模式[/bold yellow]\n"
         "[dim]项目地址：https://github.com/Moeus/AutoCheckBJMF[/dim]\n"
