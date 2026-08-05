@@ -44,7 +44,7 @@ console = Console()
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
 
 # 微信扫码登录地址
-LOGIN_URL = "https://login.b8n.cn/qr/weixin/student/2"
+LOGIN_URL = "https://bj.k8n.cn/login/qr/weixin/student/2"
 
 # 扫码后等待跳转的监听目标
 LISTEN_TARGET = "https://bj.k8n.cn/student"
