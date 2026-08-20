@@ -3,7 +3,7 @@ make_config.py — AutoCheckBJMF 配置向导
 =========================================
 交互式终端引导用户完成所有配置，并将结果写入 config.json。
 
-新版配置格式：
+配置格式：
 {
     "classes":      ["123456", "789012"],        # 班级 ID 列表（支持多班级）
     "locations": [                               # 签到定位点列表（支持多个）
@@ -12,36 +12,36 @@ make_config.py — AutoCheckBJMF 配置向导
     "cookies":      ["remember_student_xxx=..."], # 用户 Cookie 列表（支持多账号）
     "scheduletimes": ["08:00", "12:30"],          # 定时签到时间列表（支持多个）
     "pushplus":     "",                           # PushPlus 推送 Token（可选）
+    "feishu_webhook": "",                         # 飞书自定义机器人 Webhook（可选）
     "debug":        false                         # 调试模式
 }
 """
 
-import os
 import re
-import json
-from prompt_toolkit import prompt
-from prompt_toolkit.formatted_text import HTML
 import questionary
 from DrissionPage import ChromiumPage
 
+from core.config_wizard import (
+    load_existing_config,
+    print_config_banner,
+    print_step_header,
+    prompt_input,
+    save_config,
+)
+from core.constants import COOKIE_KEY
+from core.location import is_valid_coordinate, parse_coordinate_pair
+from core.prompts import confirm_or_default
+from core.ui import console
+
 # ── Rich 终端美化库 ──
-from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from rich.text import Text
 from rich import box
 from rich.rule import Rule
-from rich.prompt import Confirm
-
-# 全局 Rich 控制台实例（stderr=False 保证输出到标准输出）
-console = Console()
 
 # ──────────────────────────────────────────────
 #  常量定义
 # ──────────────────────────────────────────────
-
-# 配置文件保存路径（与脚本同目录）
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
 
 # 微信扫码登录地址
 LOGIN_URL = "https://bj.k8n.cn/login/qr/weixin/student/2"
@@ -52,107 +52,33 @@ LISTEN_TARGET = "https://bj.k8n.cn/student"
 # 腾讯坐标拾取工具地址
 MAP_URL = "https://lbs.qq.com/getPoint/"
 
-# Cookie 中需要提取的字段名
-COOKIE_KEY = "remember_student_59ba36addc2b2f9401580f014c7f58ea4e30989d"
 
-
-# ──────────────────────────────────────────────
-#  工具函数
-# ──────────────────────────────────────────────
-
-def print_banner():
-    """打印带 Rich 样式的欢迎横幅与 ASCII Art 标题。"""
-    # ASCII Art 标题（保持原有设计）
-    ascii_art = """
-                     _                _____   _                     _        ____         _   __  __   ______ 
-     /\             | |              / ____| | |                   | |      |  _ \       | | |  \/  | |  ____|
-    /  \     _   _  | |_    ___     | |      | |__     ___    ___  | | __   | |_) |      | | | \  / | | |__   
-   / /\ \   | | | | | __|  / _ \    | |      | '_ \   / _ \  / __| | |/ /   |  _ <   _   | | | |\/| | |  __|  
-  / ____ \  | |_| | | |_  | (_) |   | |____  | | | | |  __/ | (__  |   <    | |_) | | |__| | | |  | | | |     
- /_/    \_\  \__,_|  \__|  \___/     \_____| |_| |_|  \___|  \___| |_|\_\   |____/   \____/  |_|  |_| |_|     
-                                                                                                              
-                                                                                                              
- """
-
-    console.print(f"\n[bold cyan]{ascii_art}[/bold cyan]")
-    console.print(
-        Panel.fit(
-            "[bold white]班级魔方 GPS 自动签到配置向导[/bold white]\n"
-            "[dim]项目地址：https://github.com/Moeus/AutoCheckBJMF[/dim]",
-            border_style="cyan",
-            padding=(0, 4),
-        )
-    )
-    console.print()
-
-
-def prompt_input(message: str, placeholder: str = "", default: str = "") -> str:
+def normalize_schedule_time(value: str) -> str | None:
     """
-    带灰色占位符提示的终端输入框（基于 prompt_toolkit）。
+    将用户输入的签到时间规范化为 HH:MM。
 
-    参数：
-        message     — 显示给用户的提示文字
-        placeholder — 输入框内的灰色提示文字（用户一开始输入即消失）
-        default     — 若用户直接回车则使用的默认值
-
-    返回：
-        用户输入的字符串（去除首尾空白），若为空则返回 default。
+    兼容示例：
+        8:00    -> 08:00
+        8：00   -> 08:00
+        08：0   -> 08:00
+        8 00    -> 08:00
     """
-    placeholder_html = HTML(f'<style color="#888888">{placeholder}</style>') if placeholder else None
-    result = prompt(message, placeholder=placeholder_html).strip()
-    return result if result else default
+    text = value.strip()
+    if not text:
+        return None
 
+    text = text.replace("：", ":").replace("﹕", ":")
+    match = re.match(r"^(\d{1,2})\s*[:\s]\s*(\d{1,2})$", text)
+    if not match:
+        return None
 
-def load_existing_config() -> dict:
-    """
-    读取已有的 config.json，若不存在则返回空字典。
+    hour = int(match.group(1))
+    minute = int(match.group(2))
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return None
 
-    返回：
-        配置字典，键不存在时返回 {}。
-    """
-    if os.path.exists(CONFIG_PATH):
-        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-            try:
-                return json.load(f)
-            except json.JSONDecodeError:
-                return {}
-    return {}
+    return f"{hour:02d}:{minute:02d}"
 
-
-def save_config(config: dict):
-    """
-    将配置字典写入 config.json（UTF-8，4 空格缩进）。
-
-    参数：
-        config — 完整的配置字典
-    """
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(config, f, indent=4, ensure_ascii=False)
-    console.print(f"\n[bold green]✅ 配置已保存至：[/bold green][underline]{CONFIG_PATH}[/underline]")
-
-
-def print_step_header(step: int, total: int, title: str, subtitle: str = ""):
-    """
-    打印统一风格的步骤标题面板。
-
-    参数：
-        step     — 当前步骤序号
-        total    — 总步骤数
-        title    — 步骤标题
-        subtitle — 步骤副标题/说明（可选）
-    """
-    step_label = f"步骤 {step}/{total}"
-    content = f"[bold white]{title}[/bold white]"
-    if subtitle:
-        content += f"\n[dim]{subtitle}[/dim]"
-    console.print(
-        Panel(
-            content,
-            title=f"[bold yellow] {step_label} [/bold yellow]",
-            border_style="yellow",
-            padding=(0, 2),
-        )
-    )
 
 
 # ──────────────────────────────────────────────
@@ -310,21 +236,34 @@ def configure_locations(existing_locations: list) -> list:
 
             console.print(
                 f"\n  [bold]定位点 #{idx}[/bold]  "
-                "[dim]经纬度尽量输入 8 位小数（不足八位时脚本自动随机补全），用于签到时的微偏移！[/dim]"
+                "[dim]可直接粘贴地图坐标，格式如 22.766885,108.451339。[/dim]"
             )
 
             lat = ""
-            while not lat:
-                lat = prompt_input("  请输入纬度 (lat)：").strip()
-                if not re.match(r'^\d+\.\d{4,}$', lat):
-                    console.print("  [bold red]✗[/bold red] 格式不正确，例如：39.90123456（至少4位小数）")
-                    lat = ""
-
             lng = ""
-            while not lng:
+            while not lat or not lng:
+                coord_text = prompt_input(
+                    "  请输入经纬度（纬度,经度；直接回车则分开输入）：",
+                    placeholder="22.766885,108.451339"
+                ).strip()
+
+                if coord_text:
+                    parsed = parse_coordinate_pair(coord_text)
+                    if parsed:
+                        lat, lng = parsed
+                        break
+                    console.print("  [bold red]✗[/bold red] 格式不正确，例如：22.766885,108.451339")
+                    continue
+
+                lat = prompt_input("  请输入纬度 (lat)：").strip()
+                if not is_valid_coordinate(lat, -90, 90):
+                    console.print("  [bold red]✗[/bold red] 纬度格式不正确，例如：22.766885（至少4位小数）")
+                    lat = ""
+                    continue
+
                 lng = prompt_input("  请输入经度 (lng)：").strip()
-                if not re.match(r'^\d+\.\d{4,}$', lng):
-                    console.print("  [bold red]✗[/bold red] 格式不正确，例如：116.40123456（至少4位小数）")
+                if not is_valid_coordinate(lng, -180, 180):
+                    console.print("  [bold red]✗[/bold red] 经度格式不正确，例如：108.451339（至少4位小数）")
                     lng = ""
 
             acc = prompt_input("  请输入海拔 (acc)，不确定可直接回车使用默认值 10：", default="10")
@@ -377,9 +316,10 @@ def configure_schedule_times(existing_times: list) -> list:
 
         time_str = ""
         while not time_str:
-            time_str = prompt_input("  请输入签到时间（格式 HH:MM，例如 08:05）：").strip()
-            if not re.match(r'^([01]\d|2[0-3]):([0-5]\d)$', time_str):
-                console.print("  [bold red]✗[/bold red] 格式错误！例如：08:05、12:30、18:00")
+            raw_time = prompt_input("  请输入签到时间（格式 HH:MM，例如 08:05）：").strip()
+            time_str = normalize_schedule_time(raw_time)
+            if not time_str:
+                console.print("  [bold red]✗[/bold red] 格式错误！例如：08:05、8:00、8：00、12:30")
                 time_str = ""
 
         if time_str not in times:
@@ -397,7 +337,7 @@ def configure_schedule_times(existing_times: list) -> list:
 
 
 # ──────────────────────────────────────────────
-#  步骤 4：配置 PushPlus 推送
+#  步骤 4：配置消息推送
 # ──────────────────────────────────────────────
 
 def configure_pushplus(existing_token: str) -> str:
@@ -412,10 +352,10 @@ def configure_pushplus(existing_token: str) -> str:
     """
     print_step_header(
         4, 4,
-        "配置 PushPlus 推送（可选）",
-        "签到成功后可通过 PushPlus 推送微信消息通知。Token 获取：http://www.pushplus.plus/"
+        "配置消息推送（可选）",
+        "签到成功后可通过 PushPlus 或飞书自定义机器人 Webhook 发送通知。"
     )
-    console.print("  [dim]注意：多人签到场景下推送功能可能不完整。[/dim]\n")
+    console.print("  [bold]PushPlus[/bold]  [dim]Token 获取：http://www.pushplus.plus/[/dim]\n")
 
     if existing_token:
         console.print(f"  当前已有 Token：[dim]{existing_token[:10]}…[/dim]")
@@ -428,6 +368,33 @@ def configure_pushplus(existing_token: str) -> str:
     else:
         console.print("  [yellow]ℹ[/yellow]  未配置推送，跳过。")
     return token
+
+
+def configure_feishu_webhook(existing_webhook: str) -> str:
+    """
+    引导用户配置飞书自定义机器人 Webhook（可选）。
+
+    参数：
+        existing_webhook — 已有的 Webhook URL 字符串（可能为空）
+
+    返回：
+        用户输入的 Webhook URL 字符串，留空则返回空字符串。
+    """
+    console.print("\n  [bold]飞书自定义机器人 Webhook[/bold]")
+    console.print("  [dim]格式示例：https://open.feishu.cn/open-apis/bot/v2/hook/xxxx[/dim]\n")
+
+    if existing_webhook:
+        masked = existing_webhook[:40] + "…" if len(existing_webhook) > 40 else existing_webhook
+        console.print(f"  当前已有飞书 Webhook：[dim]{masked}[/dim]")
+        if not questionary.confirm("  是否修改飞书 Webhook？", default=False).ask():
+            return existing_webhook
+
+    webhook = prompt_input("  请输入飞书 Webhook URL（留空不使用飞书推送）：")
+    if webhook:
+        console.print("  [bold green]✔[/bold green] 已设置飞书 Webhook")
+    else:
+        console.print("  [yellow]ℹ[/yellow]  未配置飞书推送，跳过。")
+    return webhook
 
 
 # ──────────────────────────────────────────────
@@ -458,6 +425,7 @@ def print_summary(config: dict):
         table.add_row("定时时间", "[yellow]未设置（立即签到模式）[/yellow]")
 
     table.add_row("PushPlus 推送", "[green]已配置[/green]" if config["pushplus"] else "[dim]未配置[/dim]")
+    table.add_row("飞书推送", "[green]已配置[/green]" if config["feishu_webhook"] else "[dim]未配置[/dim]")
     table.add_row("调试模式", "[yellow]开启[/yellow]" if config["debug"] else "[dim]关闭[/dim]")
 
     console.print(table)
@@ -476,7 +444,7 @@ def main():
     3. 依次执行四个配置步骤
     4. 展示汇总并写入 config.json
     """
-    print_banner()
+    print_config_banner()
 
     # 读取已有配置，允许用户在已有基础上修改
     existing = load_existing_config()
@@ -506,6 +474,7 @@ def main():
     existing_cookies   = existing.get("cookies", [])
     existing_times     = existing.get("scheduletimes", [])
     existing_pushplus  = existing.get("pushplus", "")
+    existing_feishu    = existing.get("feishu_webhook", existing.get("feishu_websocket", ""))
     existing_debug     = existing.get("debug", False)
 
     console.print()
@@ -530,17 +499,18 @@ def main():
 
     console.print()
 
-    # ── 步骤 4：配置 PushPlus ──
+    # ── 步骤 4：配置消息推送 ──
     pushplus_token = configure_pushplus(existing_pushplus)
+    feishu_webhook = configure_feishu_webhook(existing_feishu)
 
     console.print()
 
     # ── 调试模式 ──
     console.rule("[dim]其他设置[/dim]")
-    debug = questionary.confirm(
+    debug = confirm_or_default(
         "是否启用调试模式（Debug）？启用后会将详细日志写入 AutoCheckBJMF.log",
         default=existing_debug
-    ).ask()
+    )
 
     # ── 汇总配置 ──
     config = {
@@ -549,13 +519,14 @@ def main():
         "cookies":       cookie_list,     # Cookie 列表
         "scheduletimes": schedule_times,  # 定时时间列表
         "pushplus":      pushplus_token,  # PushPlus Token
+        "feishu_webhook": feishu_webhook,  # 飞书自定义机器人 Webhook
         "debug":         debug            # 调试模式
     }
 
     # 展示配置汇总
     print_summary(config)
 
-    if questionary.confirm("确认保存以上配置？", default=True).ask():
+    if confirm_or_default("确认保存以上配置？", default=True):
         save_config(config)
         console.print(
             Panel(
