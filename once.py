@@ -10,41 +10,51 @@ once.py — AutoCheckBJMF 一次性立即签到
 若 config.json 不存在，请先运行 make_config.py 生成配置。
 """
 
-# ─────────────────────────────────────────────────────────────
-#  直接从 main.py 复用签到核心逻辑，避免代码重复
-#  导入：load_config, setup_logger, run_all_classes, console
-# ─────────────────────────────────────────────────────────────
-from main import load_config, setup_logger, run_all_classes, console
-
 from rich.panel import Panel
-from rich.table import Table
-from rich import box
 
-def print_banner():
-    """打印带 Rich 样式的欢迎横幅与 ASCII Art 标题。"""
-    # ASCII Art 标题（保持原有设计）
-    ascii_art = """
-                     _                _____   _                     _        ____         _   __  __   ______ 
-     /\             | |              / ____| | |                   | |      |  _ \       | | |  \/  | |  ____|
-    /  \     _   _  | |_    ___     | |      | |__     ___    ___  | | __   | |_) |      | | | \  / | | |__   
-   / /\ \   | | | | | __|  / _ \    | |      | '_ \   / _ \  / __| | |/ /   |  _ <   _   | | | |\/| | |  __|  
-  / ____ \  | |_| | | |_  | (_) |   | |____  | | | | |  __/ | (__  |   <    | |_) | | |__| | | |  | | | |     
- /_/    \_\  \__,_|  \__|  \___/     \_____| |_| |_|  \___|  \___| |_|\_\   |____/   \____/  |_|  |_| |_|     
-                                                                                                              
-                                                                                                              
- """
+from core.config import load_config
+from core.logger import setup_logger
+from core.signin import run_all_classes
+from core.ui import console, print_banner, print_runtime_summary
 
-    console.print(f"\n[bold cyan]{ascii_art}[/bold cyan]")
-    console.print()
+
+def validate_once_config(classes: list, cookies: list, locations: list) -> bool:
+    """校验一次性签到需要的基础配置。"""
+    if not classes:
+        console.print(Panel(
+            "[bold red]❌ 未配置任何班级 ID[/bold red]\n请先运行 [cyan]python make_config.py[/cyan] 完成配置。",
+            border_style="red", padding=(0, 2)
+        ))
+        input("按回车退出…")
+        return False
+
+    if not cookies:
+        console.print(Panel(
+            "[bold red]❌ 未配置任何账号 Cookie[/bold red]\n请先运行 [cyan]python make_config.py[/cyan] 完成配置。",
+            border_style="red", padding=(0, 2)
+        ))
+        input("按回车退出…")
+        return False
+
+    if not locations:
+        console.print(Panel(
+            "[bold red]❌ 未配置任何定位点[/bold red]\n请先运行 [cyan]python make_config.py[/cyan] 完成配置。",
+            border_style="red", padding=(0, 2)
+        ))
+        input("按回车退出…")
+        return False
+
+    return True
+
+
 def main():
     """
     once.py 程序入口：
-    1. 加载配置文件（与 main.py 共用 config.json）
-    2. 初始化日志（遵循 debug 配置）
+    1. 加载配置文件
+    2. 初始化日志
     3. 立即对所有班级、所有账号执行一次完整签到
     4. 签到结束后等待用户按回车退出
     """
-
     print_banner()
     console.print(Panel(
         "[bold white]AutoCheckBJMF — 班级魔方自动签到[/bold white]  [bold yellow]一次性模式[/bold yellow]\n"
@@ -53,55 +63,28 @@ def main():
         border_style="yellow", padding=(0, 4)
     ))
 
-    # ── 加载配置 ──
     cfg = load_config()
-    classes        = cfg["classes"]
-    locations      = cfg["locations"]
-    cookies        = cfg["cookies"]
+    classes = cfg["classes"]
+    locations = cfg["locations"]
+    cookies = cfg["cookies"]
     pushplus_token = cfg.get("pushplus", "")
-    debug          = cfg.get("debug", False)
+    feishu_webhook = cfg.get("feishu_webhook", cfg.get("feishu_websocket", ""))
+    debug = cfg.get("debug", False)
 
-    # ── 初始化日志系统 ──
     logger = setup_logger(debug)
+    print_runtime_summary(
+        classes=classes,
+        cookies=cookies,
+        locations=locations,
+        pushplus_token=pushplus_token,
+        feishu_webhook=feishu_webhook,
+        debug=debug,
+    )
 
-    # ── 打印配置摘要（Rich Table） ──
-    table = Table(box=box.SIMPLE, show_header=False, padding=(0, 1))
-    table.add_column("项目", style="bold cyan", no_wrap=True)
-    table.add_column("值", style="white")
-    table.add_row("班级 ID", ", ".join(classes) if classes else "[red]未配置[/red]")
-    table.add_row("账号数", str(len(cookies)))
-    table.add_row("定位点数", str(len(locations)))
-    table.add_row("PushPlus", "[green]已配置[/green]" if pushplus_token else "[dim]未配置[/dim]")
-    table.add_row("调试模式", "[yellow]开启[/yellow]" if debug else "[dim]关闭[/dim]")
-    console.print(table)
-
-    # ── 基础校验 ──
-    if not classes:
-        console.print(Panel(
-            "[bold red]❌ 未配置任何班级 ID[/bold red]\n请先运行 [cyan]python make_config.py[/cyan] 完成配置。",
-            border_style="red", padding=(0, 2)
-        ))
-        input("按回车退出…")
+    if not validate_once_config(classes, cookies, locations):
         return
 
-    if not cookies:
-        console.print(Panel(
-            "[bold red]❌ 未配置任何账号 Cookie[/bold red]\n请先运行 [cyan]python make_config.py[/cyan] 完成配置。",
-            border_style="red", padding=(0, 2)
-        ))
-        input("按回车退出…")
-        return
-
-    if not locations:
-        console.print(Panel(
-            "[bold red]❌ 未配置任何定位点[/bold red]\n请先运行 [cyan]python make_config.py[/cyan] 完成配置。",
-            border_style="red", padding=(0, 2)
-        ))
-        input("按回车退出…")
-        return
-
-    # ── 立即执行签到 ──
-    run_all_classes(classes, cookies, locations, pushplus_token, debug, logger)
+    run_all_classes(classes, cookies, locations, pushplus_token, debug, logger, feishu_webhook)
 
     console.print(Panel(
         "[bold green]✅ 一次性签到任务已完成。[/bold green]",
