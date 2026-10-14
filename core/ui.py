@@ -2,6 +2,8 @@ from rich import box
 from rich.console import Console
 from rich.table import Table
 
+from .timezone import TIMEZONE_LABEL
+
 console = Console()
 
 ASCII_ART = """
@@ -35,12 +37,13 @@ def print_runtime_summary(
     table = Table(box=box.SIMPLE, show_header=False, padding=(0, 1))
     table.add_column("项目", style="bold cyan", no_wrap=True)
     table.add_column("值", style="white")
+    table.add_row("运行时区", TIMEZONE_LABEL)
     table.add_row("班级 ID", ", ".join(classes) if classes else "[red]未配置[/red]")
     table.add_row("账号数", str(len(cookies)))
     table.add_row("定位点数", str(len(locations)))
     if schedule_times is not None:
         if schedule_times:
-            table.add_row("定时时间", "[cyan]" + "  /  ".join(schedule_times) + "[/cyan]")
+            table.add_row("签到计划", "[cyan]" + "\n".join(schedule_times) + "[/cyan]")
         else:
             table.add_row("定时时间", "[yellow]未设置（立即执行）[/yellow]")
     table.add_row("PushPlus", "[green]已配置[/green]" if pushplus_token else "[dim]未配置[/dim]")

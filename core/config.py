@@ -3,6 +3,7 @@ import json
 from rich.panel import Panel
 
 from .constants import CONFIG_PATH
+from .scheduler import validate_schedule_config
 from .ui import console
 
 
@@ -27,11 +28,20 @@ def load_config() -> dict:
             input("按回车退出…")
             raise SystemExit(1)
 
-    required_keys = ["classes", "locations", "cookies", "scheduletimes"]
+    if not isinstance(cfg, dict):
+        console.print("[bold red]❌ config.json 必须是 JSON 对象[/bold red]")
+        raise SystemExit(1)
+
+    required_keys = ["classes", "locations", "cookies"]
     for key in required_keys:
         if key not in cfg:
             console.print(f"[bold red]❌ config.json 缺少必要字段：[/bold red][cyan]{key}[/cyan]，请重新运行 make_config.py")
             input("按回车退出…")
             raise SystemExit(1)
 
+    try:
+        validate_schedule_config(cfg)
+    except ValueError as e:
+        console.print(f"[bold red]❌ 定时配置错误：[/bold red]{e}")
+        raise SystemExit(1) from e
     return cfg

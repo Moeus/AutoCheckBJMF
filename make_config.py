@@ -10,7 +10,9 @@ make_config.py — AutoCheckBJMF 配置向导
         {"lat": "39.90000000", "lng": "116.40000000", "acc": "10"}
     ],
     "cookies":      ["remember_student_xxx=..."], # 用户 Cookie 列表（支持多账号）
-    "scheduletimes": ["08:00", "12:30"],          # 定时签到时间列表（支持多个）
+    "schedule_windows": [                        # 每日签到区间（支持多个）
+        {"start": "08:00", "end": "08:30", "interval_seconds": 60}
+    ],
     "pushplus":     "",                           # PushPlus 推送 Token（可选）
     "feishu_webhook": "",                         # 飞书自定义机器人 Webhook（可选）
     "debug":        false                         # 调试模式
@@ -31,6 +33,12 @@ from core.config_wizard import (
 from core.constants import COOKIE_KEY
 from core.location import is_valid_coordinate, parse_coordinate_pair
 from core.prompts import confirm_or_default
+from core.scheduler import (
+    format_schedule_window,
+    normalize_schedule_time,
+    schedule_descriptions,
+    validate_schedule_config,
+)
 from core.ui import console
 
 # ── Rich 终端美化库 ──
@@ -51,34 +59,6 @@ LISTEN_TARGET = "https://bj.k8n.cn/student"
 
 # 腾讯坐标拾取工具地址
 MAP_URL = "https://lbs.qq.com/getPoint/"
-
-
-def normalize_schedule_time(value: str) -> str | None:
-    """
-    将用户输入的签到时间规范化为 HH:MM。
-
-    兼容示例：
-        8:00    -> 08:00
-        8：00   -> 08:00
-        08：0   -> 08:00
-        8 00    -> 08:00
-    """
-    text = value.strip()
-    if not text:
-        return None
-
-    text = text.replace("：", ":").replace("﹕", ":")
-    match = re.match(r"^(\d{1,2})\s*[:\s]\s*(\d{1,2})$", text)
-    if not match:
-        return None
-
-    hour = int(match.group(1))
-    minute = int(match.group(2))
-    if not (0 <= hour <= 23 and 0 <= minute <= 59):
-        return None
-
-    return f"{hour:02d}:{minute:02d}"
-
 
 
 # ──────────────────────────────────────────────
@@ -286,54 +266,90 @@ def configure_locations(existing_locations: list) -> list:
 #  步骤 3：配置定时签到时间
 # ──────────────────────────────────────────────
 
-def configure_schedule_times(existing_times: list) -> list:
-    """
-    引导用户配置定时签到时间点列表。
-    支持添加多个时间点，main.py 会为每个时间点注册一个 schedule 任务。
-
-    参数：
-        existing_times — 已有的时间点列表（字符串列表，格式 "HH:MM"）
-
-    返回：
-        更新后的时间点列表
-    """
-    times = list(existing_times)
-
-    print_step_header(
-        3, 4,
-        "配置定时签到时间",
-        "支持设置多个时间点，main.py 将在每个时间点自动触发签到。格式：HH:MM（如 08:05）"
-    )
-
+def prompt_schedule_window(existing: dict | None = None) -> dict:
+    """输入一个区间，修改时留空保留原值。"""
+    existing = existing or {}
     while True:
-        idx = len(times) + 1
-        add = questionary.confirm(
-            f"添加第 {idx} 个定时时间点？（不设则为立即签到模式）",
-            default=(len(times) == 0)   # 第一个时间点默认回答是，之后默认否
-        ).ask()
-        if not add:
-            break
+        values = {}
+        for key, label in (("start", "开始时间"), ("end", "结束时间")):
+            default = existing.get(key, "")
+            while True:
+                raw = prompt_input(
+                    f"  {label}（HH:MM）" + (f" [{default}]" if default else "") + "：",
+                    default=default,
+                )
+                value = normalize_schedule_time(raw)
+                if value:
+                    values[key] = value
+                    break
+                console.print("  [red]时间格式错误，例如 08:05、8：00。[/red]")
+        default_interval = str(existing.get("interval_seconds", 60))
+        while True:
+            raw = prompt_input(f"  执行步长（秒）[{default_interval}]：", default=default_interval)
+            try:
+                interval = int(raw)
+                if interval > 0:
+                    break
+            except ValueError:
+                pass
+            console.print("  [red]步长必须是正整数秒。[/red]")
+        values["interval_seconds"] = interval
+        try:
+            validate_schedule_config({"schedule_windows": [values]})
+            return values
+        except ValueError as e:
+            console.print(f"  [red]{e}，请重新输入。[/red]")
 
-        time_str = ""
-        while not time_str:
-            raw_time = prompt_input("  请输入签到时间（格式 HH:MM，例如 08:05）：").strip()
-            time_str = normalize_schedule_time(raw_time)
-            if not time_str:
-                console.print("  [bold red]✗[/bold red] 格式错误！例如：08:05、8:00、8：00、12:30")
-                time_str = ""
 
-        if time_str not in times:
-            times.append(time_str)
-            console.print(f"  [bold green]✔[/bold green] 已添加时间点：[bold cyan]{time_str}[/bold cyan]")
+def configure_schedule(existing: dict) -> dict:
+    """管理多个区间；旧配置可原样保留，也可切换到区间模式。"""
+    print_step_header(
+        3, 4, "配置签到时间区间",
+        "时间统一为北京时间（UTC+8）；包含开始、不包含结束，结束早于开始表示跨午夜。",
+    )
+    if "schedule_windows" not in existing and existing.get("scheduletimes"):
+        console.print("  当前旧时间点配置：" + "、".join(existing["scheduletimes"]))
+        if not confirm_or_default("切换为时间区间模式？（选择否则保留旧时间点）", default=True):
+            return {"scheduletimes": list(existing["scheduletimes"])}
+
+    windows = [dict(window) for window in existing.get("schedule_windows", [])]
+    while True:
+        console.print()
+        for index, window in enumerate(windows, 1):
+            console.print(f"  {index}. {format_schedule_window(window)}")
+        if not windows:
+            console.print("  [yellow]尚无区间；保存空列表将使用立即执行一次模式。[/yellow]")
+        choices = ["添加区间"]
+        if windows:
+            choices += ["修改区间", "删除区间"]
+        choices += ["完成配置"]
+        action = questionary.select("选择操作：", choices=choices).ask()
+        if action is None:
+            raise KeyboardInterrupt
+        if action == "完成配置":
+            return {"schedule_windows": windows}
+        if action == "添加区间":
+            window = prompt_schedule_window()
+            if window not in windows:
+                windows.append(window)
+            else:
+                console.print("  [yellow]相同区间已存在，跳过。[/yellow]")
         else:
-            console.print(f"  [yellow]ℹ[/yellow]  时间点 {time_str} 已存在，跳过。")
-
-    if times:
-        console.print(f"\n  已配置的定时时间点：[bold cyan]{times}[/bold cyan]")
-    else:
-        console.print("\n  [yellow]未配置定时时间点，main.py 启动后将立即执行一次签到。[/yellow]")
-
-    return times
+            selected = questionary.select(
+                "选择区间：",
+                choices=[questionary.Choice(f"{i + 1}. {format_schedule_window(w)}", value=i)
+                         for i, w in enumerate(windows)],
+            ).ask()
+            if selected is None:
+                continue
+            if action == "删除区间":
+                windows.pop(selected)
+            else:
+                window = prompt_schedule_window(windows[selected])
+                if any(w == window for i, w in enumerate(windows) if i != selected):
+                    console.print("  [yellow]相同区间已存在，保留原配置。[/yellow]")
+                else:
+                    windows[selected] = window
 
 
 # ──────────────────────────────────────────────
@@ -419,8 +435,9 @@ def print_summary(config: dict):
     table.add_row("定位点数", f"{len(config['locations'])} 个")
     table.add_row("账号数", f"{len(config['cookies'])} 个")
 
-    if config["scheduletimes"]:
-        table.add_row("定时时间", "[cyan]" + "  /  ".join(config["scheduletimes"]) + "[/cyan]")
+    descriptions = schedule_descriptions(config)
+    if descriptions:
+        table.add_row("签到计划", "[cyan]" + "\n".join(descriptions) + "[/cyan]")
     else:
         table.add_row("定时时间", "[yellow]未设置（立即签到模式）[/yellow]")
 
@@ -472,7 +489,6 @@ def main():
     existing_classes   = existing.get("classes", [])
     existing_locations = existing.get("locations", [])
     existing_cookies   = existing.get("cookies", [])
-    existing_times     = existing.get("scheduletimes", [])
     existing_pushplus  = existing.get("pushplus", "")
     existing_feishu    = existing.get("feishu_webhook", existing.get("feishu_websocket", ""))
     existing_debug     = existing.get("debug", False)
@@ -495,7 +511,7 @@ def main():
     console.print()
 
     # ── 步骤 3：配置定时时间 ──
-    schedule_times = configure_schedule_times(existing_times)
+    schedule_config = configure_schedule(existing)
 
     console.print()
 
@@ -517,7 +533,7 @@ def main():
         "classes":       class_list,     # 班级 ID 列表
         "locations":     locations,       # 签到定位点列表
         "cookies":       cookie_list,     # Cookie 列表
-        "scheduletimes": schedule_times,  # 定时时间列表
+        **schedule_config,              # 区间配置或兼容旧时间点
         "pushplus":      pushplus_token,  # PushPlus Token
         "feishu_webhook": feishu_webhook,  # 飞书自定义机器人 Webhook
         "debug":         debug            # 调试模式

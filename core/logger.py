@@ -1,6 +1,14 @@
 import logging
+from datetime import datetime
 
 from .constants import LOG_PATH
+from .timezone import BEIJING_TZ
+
+
+class BeijingFormatter(logging.Formatter):
+    def formatTime(self, record, datefmt=None):
+        timestamp = datetime.fromtimestamp(record.created, BEIJING_TZ)
+        return timestamp.strftime(datefmt) if datefmt else timestamp.isoformat(sep=" ", timespec="milliseconds")
 
 
 def setup_logger(debug: bool) -> logging.Logger:
@@ -18,7 +26,7 @@ def setup_logger(debug: bool) -> logging.Logger:
         )
         if not has_handler:
             handler = logging.FileHandler(log_file, encoding="utf-8")
-            handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+            handler.setFormatter(BeijingFormatter("%(asctime)s - %(levelname)s - %(message)s"))
             logger.addHandler(handler)
         logger.info("调试模式已启用")
 

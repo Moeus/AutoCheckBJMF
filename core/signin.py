@@ -2,7 +2,6 @@ import logging
 import random
 import re
 import time
-from datetime import datetime
 
 import requests
 from bs4 import BeautifulSoup
@@ -11,6 +10,7 @@ from rich.panel import Panel
 from .constants import COOKIE_KEY
 from .location import modify_decimal_part
 from .notifications import send_success_notifications
+from .timezone import TIMEZONE_LABEL, beijing_now
 from .ui import console
 
 
@@ -171,11 +171,12 @@ def run_all_classes(
     debug: bool,
     logger: logging.Logger,
     feishu_webhook: str = "",
+    retry_failures: bool = True,
 ):
     """
-    遍历所有班级，依次执行签到，并对失败的 Cookie 重试最多两次。
+    遍历所有班级；区间模式关闭内部重试，由下一轮调度重试。
     """
-    console.rule(f"[bold cyan]开始签到  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/bold cyan]")
+    console.rule(f"[bold cyan]开始签到  {beijing_now():%Y-%m-%d %H:%M:%S} {TIMEZONE_LABEL}[/bold cyan]")
     console.print(
         f"  班级数：[bold]{len(classes)}[/bold]  账号数：[bold]{len(cookies)}[/bold]  "
         f"定位点数：[bold]{len(locations)}[/bold]"
@@ -187,14 +188,14 @@ def run_all_classes(
             class_id, cookies, locations, pushplus_token, debug, logger, feishu_webhook
         )
 
-        if error_cookies:
+        if error_cookies and retry_failures:
             console.print(f"\n  [yellow]⚠[/yellow] 有 [bold]{len(error_cookies)}[/bold] 个账号签到失败，30秒后重试…")
             time.sleep(30)
             error_cookies, _ = qiandao(
                 class_id, error_cookies, locations, pushplus_token, debug, logger, feishu_webhook
             )
 
-        if error_cookies:
+        if error_cookies and retry_failures:
             console.print(f"\n  [yellow]⚠[/yellow] 仍有 [bold]{len(error_cookies)}[/bold] 个账号失败，5 分钟后最后一次重试…")
             time.sleep(300)
             error_cookies, _ = qiandao(

@@ -1,10 +1,10 @@
 import logging
-from datetime import datetime
 
 import requests
 
 from .constants import PUSHPLUS_URL
 from .location import format_location
+from .timezone import TIMEZONE_LABEL, beijing_now
 from .ui import console
 
 
@@ -80,7 +80,7 @@ def build_sign_success_content(
     acc: str,
 ) -> str:
     """构建详细的签到成功通知文本。"""
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = f"{beijing_now():%Y-%m-%d %H:%M:%S} {TIMEZONE_LABEL}"
     location_text = format_location(lat, lng, acc)
     return "\n".join([
         "🚀 **班级魔方签到成功**",
@@ -121,13 +121,13 @@ def send_lifecycle_notification(
 ):
     """脚本启动或关闭时发送运行状态通知。"""
     title = "AutoCheckBJMF 运行提醒"
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = f"{beijing_now():%Y-%m-%d %H:%M:%S} {TIMEZONE_LABEL}"
     schedule_text = "、".join(schedule_times) if schedule_times else "未设置（立即模式）"
     content = "\n".join([
         f"🚀 **AutoCheckBJMF 脚本{event}**",
         f"⏱️ 通知时间：{timestamp}",
         f"🧭 运行模式：{mode}",
-        f"📅 监听签到时间：{schedule_text}",
+        f"📅 签到计划：{schedule_text}",
         f"✅ 当前状态：{event}",
     ])
     send_channel_notifications(pushplus_token, feishu_webhook, title, content, logger)
