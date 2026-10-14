@@ -93,6 +93,8 @@ Cookie 有有效期，过期后需要重新运行 `make_config.py` 刷新。
 
 配置向导会打开腾讯地图坐标拾取工具。你可以直接复制地图中的坐标并粘贴到终端。
 
+![获取坐标](asset/获取坐标.png)
+
 支持的输入格式示例：
 
 ```text
@@ -230,3 +232,13 @@ A：不会。`once.py` 只在签到成功时通知；启动和关闭通知只属
 ## 免责声明
 
 本项目仅供学习交流使用，请勿用于作弊或违反平台规则的行为。使用本项目产生的一切后果由使用者自行承担。
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=moeus%2Fautocheckbjmf&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=moeus/autocheckbjmf&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=moeus/autocheckbjmf&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=moeus/autocheckbjmf&type=date&legend=top-left" />
+ </picture>
+</a>
