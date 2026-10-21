@@ -11,7 +11,7 @@ make_config.py — AutoCheckBJMF 配置向导
     ],
     "cookies":      ["remember_student_xxx=..."], # 用户 Cookie 列表（支持多账号）
     "schedule_windows": [                        # 每日签到区间（支持多个）
-        {"start": "08:00", "end": "08:30", "interval_seconds": 60}
+        {"start": "08:00", "end": "08:30", "interval_seconds": 300}
     ],
     "pushplus":     "",                           # PushPlus 推送 Token（可选）
     "feishu_webhook": "",                         # 飞书自定义机器人 Webhook（可选）
@@ -283,7 +283,7 @@ def prompt_schedule_window(existing: dict | None = None) -> dict:
                     values[key] = value
                     break
                 console.print("  [red]时间格式错误，例如 08:05、8：00。[/red]")
-        default_interval = str(existing.get("interval_seconds", 60))
+        default_interval = str(existing.get("interval_seconds", 300))
         while True:
             raw = prompt_input(f"  执行步长（秒）[{default_interval}]：", default=default_interval)
             try:

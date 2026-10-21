@@ -18,6 +18,7 @@ from core.config import load_config
 from core.logger import setup_logger
 from core.notifications import send_lifecycle_notification
 from core.scheduler import DailyScheduler, get_countdown_status, schedule_descriptions
+from core.session import AccountSessions
 from core.signin import run_all_classes
 from core.timezone import beijing_now
 from core.ui import console, print_banner, print_runtime_summary
@@ -63,11 +64,13 @@ def main():
     send_lifecycle_notification(
         pushplus_token, feishu_webhook, "已启动", lifecycle_mode, logger, schedule_times
     )
+    sessions = AccountSessions()
 
     def job():
         run_all_classes(
             classes, cookies, locations, pushplus_token, debug, logger, feishu_webhook,
             retry_failures=not window_mode,
+            sessions=sessions,
         )
         if schedule_times:
             console.print("\n  [dim]☆ 本次签到结束，继续等待下一个定时任务…[/dim]\n")
@@ -99,6 +102,7 @@ def main():
     except KeyboardInterrupt:
         console.print("\n  [yellow]已收到停止信号，准备退出…[/yellow]")
     finally:
+        sessions.close()
         send_lifecycle_notification(
             pushplus_token, feishu_webhook, "已关闭", lifecycle_mode, logger, schedule_times
         )

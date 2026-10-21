@@ -198,6 +198,9 @@ class ConfigTests(unittest.TestCase):
             return kwargs["default"]
         with patch("make_config.prompt_input", side_effect=use_defaults):
             self.assertEqual(make_config.prompt_schedule_window(window()), window())
+        with patch("make_config.prompt_input", side_effect=["08:00", "08:30", "300"]) as prompt:
+            self.assertEqual(make_config.prompt_schedule_window(), window(interval=300))
+            self.assertEqual(prompt.call_args.kwargs["default"], "300")
 
 
 class ExecutionTests(unittest.TestCase):
@@ -247,6 +250,23 @@ class ExecutionTests(unittest.TestCase):
             self.assertFalse(job.call_args.kwargs["retry_failures"])
             self.assertEqual(notify.call_count, 2)
             self.assertIn("每 60 秒", notify.call_args.args[-1][0])
+
+    def test_main_reuses_account_sessions_across_two_ticks_and_closes_on_exit(self):
+        cfg = {"classes": [], "cookies": [], "locations": [], "schedule_windows": [window()]}
+        with patch.multiple(main, print_banner=MagicMock(), console=MagicMock(),
+                            print_runtime_summary=MagicMock(), setup_logger=MagicMock(), Live=MagicMock()), \
+             patch.object(main, "load_config", return_value=cfg), \
+             patch.object(main, "send_lifecycle_notification"), \
+             patch.object(main, "AccountSessions") as pool, \
+             patch.object(main, "DailyScheduler") as scheduler_factory, \
+             patch.object(main, "run_all_classes") as job:
+            scheduler_factory.return_value.is_due.side_effect = [True, True, KeyboardInterrupt]
+            main.main()
+            self.assertEqual(job.call_count, 2)
+            pool.assert_called_once()
+            for call in job.call_args_list:
+                self.assertIs(call.kwargs["sessions"], pool.return_value)
+            pool.return_value.close.assert_called_once()
 
 
 if __name__ == "__main__":
